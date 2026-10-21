@@ -133,9 +133,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "https://imenaai.vercel.app",
 ]
+
 
 MAILERS = {
     'default': {
