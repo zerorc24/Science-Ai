@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-o5z1#%_f9i@_5g1y3ledg*)yx1eo+r&mf+#j9ijyk%65b2zh-('
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
     "science-ai-backend-092b.onrender.com",
