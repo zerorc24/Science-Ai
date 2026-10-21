@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -6,10 +7,17 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import "./App.css";
 
+const API_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://science-ai-backend-092b.onrender.com"
+).replace(/\/+$/, "");
+
+const AI_ENDPOINT = `${API_URL}/api/ai/ask/`;
+
 const subjects = [
   { icon: "🧬", name: "Biology" },
   { icon: "🧪", name: "Chemistry" },
-  { icon: "⚛", name: "Physics" },
+  { icon: "⚛️", name: "Physics" },
 ];
 
 const suggestions = [
@@ -27,9 +35,9 @@ function App() {
   const [activeSubject, setActiveSubject] = useState("All Science");
 
   const askScienceAI = async (customQuestion = null) => {
-    const currentQuestion = customQuestion ?? question;
+    const currentQuestion = (customQuestion ?? question).trim();
 
-    if (!currentQuestion.trim()) return;
+    if (!currentQuestion || loading) return;
 
     setQuestion(currentQuestion);
     setLoading(true);
@@ -37,61 +45,107 @@ function App() {
     setError("");
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/ai/ask/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            question: currentQuestion,
-          }),
-        }
-      );
+      const response = await fetch(AI_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/plain, */*",
+        },
+        body: JSON.stringify({
+          question: currentQuestion,
+        }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
+
+        let message = errorText || "Something went wrong.";
+
+        try {
+          const errorData = JSON.parse(errorText);
+          message =
+            errorData.error ||
+            errorData.detail ||
+            errorData.message ||
+            message;
+        } catch {
+          // The server returned a non-JSON error.
+        }
+
         throw new Error(
-          errorText || "Something went wrong."
+          typeof message === "string"
+            ? message
+            : "The AI request failed. Please try again."
         );
       }
 
-      if (!response.body) {
-        throw new Error(
-          "Streaming is not supported by this browser."
-        );
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      // Handle a normal Django JSON response.
+      if (
+        contentType.includes("application/json") ||
+        contentType.includes("+json")
+      ) {
+        const data = await response.json();
+
+        const result =
+          data.answer ??
+          data.response ??
+          data.result;
+
+        if (typeof result !== "string") {
+          throw new Error(
+            "The server response did not contain an answer."
+          );
+        }
+
+        setAnswer(result);
+      } else {
+        // Handle a streamed or plain-text response.
+        if (!response.body) {
+          throw new Error(
+            "Your browser could not read the AI response."
+          );
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let fullAnswer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (done) break;
+
+          fullAnswer += decoder.decode(value, {
+            stream: true,
+          });
+
+          setAnswer(fullAnswer);
+        }
+
+        fullAnswer += decoder.decode();
+
+        if (fullAnswer) {
+          setAnswer(fullAnswer);
+        }
+
+        if (!fullAnswer.trim()) {
+          throw new Error(
+            "The AI returned an empty answer. Please try again."
+          );
+        }
       }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      let fullAnswer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-
-        if (done) break;
-
-        const chunk = decoder.decode(value, {
-          stream: true,
-        });
-
-        fullAnswer += chunk;
-
-        setAnswer(fullAnswer);
-      }
-
-      const finalChunk = decoder.decode();
-
-      if (finalChunk) {
-        fullAnswer += finalChunk;
-        setAnswer(fullAnswer);
-      }
-
     } catch (err) {
-      console.error("SCIENCE AI ERROR:", err);
-      setError(err.message);
+      console.error("IMENA AI ERROR:", err);
+
+      setError(
+        err instanceof TypeError
+          ? "Could not connect to Imena AI. Check your internet connection and backend CORS settings."
+          : err.message || "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -114,57 +168,40 @@ function App() {
     if (subject === "All Science") {
       setQuestion("");
     } else {
-      setQuestion(
-        `Explain an important concept in ${subject}`
-      );
+      setQuestion(`Explain an important concept in ${subject}`);
     }
+
+    setAnswer("");
+    setError("");
   };
 
   return (
     <div className="science-app">
-
-      {/* SIDEBAR */}
       <aside className="sidebar">
-
         <div className="sidebar-brand">
-
           <div className="logo-mark">
-            <img
-              src="/science-ai.svg"
-              alt="Science AI"
-            />
+            <div className="brand-symbol">✦</div>
           </div>
 
           <div>
-            <strong>Science AI</strong>
-            <span>Learning assistant</span>
+            <strong>Imena AI</strong>
+            <span>Your science companion</span>
           </div>
-
         </div>
 
-        <button
-          className="new-chat"
-          onClick={newChat}
-        >
+        <button className="new-chat" onClick={newChat}>
           <span>＋</span>
           New conversation
         </button>
 
         <div className="sidebar-section">
-
-          <span className="sidebar-label">
-            EXPLORE
-          </span>
+          <span className="sidebar-label">EXPLORE</span>
 
           <button
             className={`sidebar-item ${
-              activeSubject === "All Science"
-                ? "active"
-                : ""
+              activeSubject === "All Science" ? "active" : ""
             }`}
-            onClick={() =>
-              chooseSubject("All Science")
-            }
+            onClick={() => chooseSubject("All Science")}
           >
             <span>⌘</span>
             All Science
@@ -173,305 +210,213 @@ function App() {
           {subjects.map((subject) => (
             <button
               className={`sidebar-item ${
-                activeSubject === subject.name
-                  ? "active"
-                  : ""
+                activeSubject === subject.name ? "active" : ""
               }`}
               key={subject.name}
-              onClick={() =>
-                chooseSubject(subject.name)
-              }
+              onClick={() => chooseSubject(subject.name)}
             >
               <span>{subject.icon}</span>
               {subject.name}
             </button>
           ))}
-
         </div>
 
         <div className="sidebar-section">
+          <span className="sidebar-label">LEARNING TOOLS</span>
 
-          <span className="sidebar-label">
-            LEARNING TOOLS
-          </span>
-
-          <button className="sidebar-item">
+          <button
+            className="sidebar-item"
+            onClick={() =>
+              askScienceAI("Explain five important science concepts.")
+            }
+            disabled={loading}
+          >
             <span>📚</span>
-            Concepts
+            Explore concepts
           </button>
 
-          <button className="sidebar-item">
+          <button
+            className="sidebar-item"
+            onClick={() =>
+              askScienceAI(
+                "Give me an important science formula, explain its variables, and show an example."
+              )
+            }
+            disabled={loading}
+          >
             <span>∑</span>
             Formula helper
           </button>
 
-          <button className="sidebar-item">
+          <button
+            className="sidebar-item"
+            onClick={() =>
+              askScienceAI(
+                `Create a five-question science practice quiz${
+                  activeSubject !== "All Science"
+                    ? ` about ${activeSubject}`
+                    : ""
+                }. Include answers and brief explanations after the questions.`
+              )
+            }
+            disabled={loading}
+          >
             <span>🧠</span>
             Practice quiz
           </button>
-
         </div>
 
         <div className="sidebar-section recent">
+          <span className="sidebar-label">CURRENT SESSION</span>
 
-          <span className="sidebar-label">
-            RECENT
-          </span>
-
-          {answer ? (
-            <>
-              <div className="recent-chat">
-                <span>💬</span>
-
-                {question.slice(0, 25)}
-
-                {question.length > 25
-                  ? "..."
-                  : ""}
-              </div>
-
-              <div className="recent-chat">
-                <span>💬</span>
-                Science explanation
-              </div>
-            </>
+          {question ? (
+            <div className="recent-chat">
+              <span>💬</span>
+              <span className="recent-question">{question}</span>
+            </div>
           ) : (
             <p className="empty-history">
-              Your recent conversations will
-              appear here.
+              Start a conversation to explore science.
             </p>
           )}
-
         </div>
 
         <div className="sidebar-bottom">
-
-          <button className="sidebar-item">
-            <span>⚙</span>
-            Settings
-          </button>
-
           <div className="student-profile">
-
-            <div className="profile-avatar">
-              S
-            </div>
-
+            <div className="profile-avatar">S</div>
             <div>
-              <strong>Science Learner</strong>
-              <span>Student account</span>
+              <strong>Science Student</strong>
+              <span>Learning with Imena</span>
             </div>
-
           </div>
-
         </div>
-
       </aside>
 
-      {/* MAIN */}
       <main className="main-area">
-
         <header className="topbar">
-
           <div className="mobile-brand">
-
-            <img
-              src="/science-ai.svg"
-              alt="Science AI"
-            />
-
-            <strong>Science AI</strong>
-
+            <div className="mobile-logo">✦</div>
+            <strong>Imena AI</strong>
           </div>
 
           <div className="topbar-right">
-
             <div className="online-status">
-              <span></span>
-              AI Online
+              <span />
+              AI learning assistant
             </div>
-
-            <button className="help-button">
-              ?
-            </button>
-
           </div>
-
         </header>
 
         <div className="workspace">
-
-          {/* WELCOME */}
           {!answer && !loading && (
             <section className="welcome">
-
               <div className="welcome-badge">
                 <span>✦</span>
-                AI-powered science learning
+                YOUR AI-POWERED SCIENCE COMPANION
               </div>
 
               <h1>
-                Learn science
+                Discover science.
                 <br />
-                <span>without limits.</span>
+                <span>Understand more.</span>
               </h1>
 
               <p>
-                Ask questions, understand difficult
-                concepts, explore formulas and learn
-                at your own pace.
+                Welcome to Imena AI. Explore Biology, Chemistry, and
+                Physics, understand difficult concepts, and learn at
+                your own pace with your personal AI science tutor.
               </p>
 
               <div className="subject-pills">
-
                 {subjects.map((subject) => (
-
                   <button
                     key={subject.name}
-                    onClick={() =>
-                      chooseSubject(subject.name)
-                    }
+                    onClick={() => chooseSubject(subject.name)}
                   >
                     <span>{subject.icon}</span>
                     {subject.name}
                   </button>
-
                 ))}
-
               </div>
-
             </section>
           )}
 
-          {/* CONVERSATION */}
           {answer && (
             <section className="conversation">
-
               <div className="question-bubble">
+                <div className="mini-avatar user-avatar">S</div>
 
-                <div className="mini-avatar user-avatar">
-                  S
-                </div>
-
-                <div>
-
-                  <span className="message-label">
-                    YOUR QUESTION
-                  </span>
-
+                <div className="message-body">
+                  <span className="message-label">YOUR QUESTION</span>
                   <p>{question}</p>
-
                 </div>
-
               </div>
 
               <div className="ai-response">
-
                 <div className="response-header">
-
-                  <div className="mini-avatar ai-avatar">
-                    ✦
-                  </div>
+                  <div className="mini-avatar ai-avatar">✦</div>
 
                   <div>
-                    <strong>
-                      Science AI
-                    </strong>
-
-                    <span>
-                      AI science tutor
-                    </span>
+                    <strong>Imena AI</strong>
+                    <span>Your AI science tutor</span>
                   </div>
 
                   <span className="response-ready">
-                    {loading
-                      ? "● Generating"
-                      : "● Ready"}
+                    {loading ? "● Generating" : "● Answer ready"}
                   </span>
-
                 </div>
 
                 <div className="answer-content">
-
                   <ReactMarkdown
                     remarkPlugins={[remarkMath]}
                     rehypePlugins={[rehypeKatex]}
                   >
                     {answer}
                   </ReactMarkdown>
-
-                  {loading && (
-                    <span className="streaming-cursor">
-                      ▌
-                    </span>
-                  )}
-
                 </div>
-
               </div>
-
             </section>
           )}
 
-          {/* INITIAL LOADING */}
           {loading && !answer && (
             <div className="loading-state">
-
-              <div className="loading-logo">
-                ✦
-              </div>
-
-              <h3>
-                Science AI is thinking...
-              </h3>
-
-              <p>
-                Building a clear explanation
-                for your question.
-              </p>
+              <div className="loading-logo">✦</div>
+              <h3>Imena AI is thinking...</h3>
+              <p>Preparing an explanation just for you.</p>
 
               <div className="loading-dots">
-                <span></span>
-                <span></span>
-                <span></span>
+                <span />
+                <span />
+                <span />
               </div>
-
             </div>
           )}
 
-          {/* ASK AREA */}
           <section className="ask-area">
-
             <form onSubmit={submitQuestion}>
-
               <div className="input-wrapper">
-
                 <textarea
                   value={question}
-                  onChange={(event) =>
-                    setQuestion(
-                      event.target.value
-                    )
-                  }
+                  onChange={(event) => setQuestion(event.target.value)}
                   placeholder={
                     activeSubject === "All Science"
-                      ? "Ask anything about science..."
+                      ? "Ask Imena AI anything about science..."
                       : `Ask a ${activeSubject} question...`
                   }
-                  rows="4"
+                  rows={4}
                   disabled={loading}
+                  aria-label="Your science question"
                 />
 
                 <div className="input-bottom">
-
                   <span className="input-context">
+                    ✦{" "}
                     {activeSubject === "All Science"
                       ? "All Science"
                       : `${activeSubject} mode`}
                   </span>
 
                   <div className="input-actions">
-
                     {question && !loading && (
                       <button
                         type="button"
@@ -485,88 +430,58 @@ function App() {
                     <button
                       type="submit"
                       className="send-btn"
-                      disabled={
-                        loading ||
-                        !question.trim()
-                      }
+                      disabled={loading || !question.trim()}
                     >
-                      {loading
-                        ? "Generating..."
-                        : "Ask AI"}
-
+                      {loading ? "Thinking..." : "Ask Imena"}
                       <span>↑</span>
                     </button>
-
                   </div>
-
                 </div>
-
               </div>
-
             </form>
 
-            {/* SUGGESTIONS */}
-            {!answer && !loading && (
-              <div className="suggestions">
-
-                <span>
-                  Try one of these
-                </span>
-
-                <div>
-
-                  {suggestions.map(
-                    (suggestion) => (
-
-                      <button
-                        key={suggestion}
-                        onClick={() =>
-                          askScienceAI(
-                            suggestion
-                          )
-                        }
-                      >
-                        {suggestion}
-                      </button>
-
-                    )
-                  )}
-
-                </div>
-
-              </div>
-            )}
-
-            {/* ERROR */}
             {error && (
-              <div className="error-message">
-
-                <strong>
-                  Something went wrong
-                </strong>
-
+              <div className="error-message" role="alert">
+                <strong>We couldn't get an answer</strong>
                 <p>{error}</p>
 
+                <button
+                  type="button"
+                  className="retry-btn"
+                  onClick={() => askScienceAI()}
+                  disabled={loading || !question.trim()}
+                >
+                  Try again
+                </button>
               </div>
             )}
 
-          </section>
+            {!answer && !loading && (
+              <div className="suggestions">
+                <span>TRY ASKING</span>
 
+                <div>
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => askScienceAI(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
         </div>
 
         <footer className="main-footer">
-
-          <span>Science AI</span>
-
+          <span className="footer-brand">✦ Imena AI</span>
           <span>
-            AI can make mistakes. Verify important
-            scientific information.
+            AI can make mistakes. Verify important scientific information.
           </span>
-
         </footer>
-
       </main>
-
     </div>
   );
 }
