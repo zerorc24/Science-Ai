@@ -27,7 +27,11 @@ SECRET_KEY = 'django-insecure-o5z1#%_f9i@_5g1y3ledg*)yx1eo+r&mf+#j9ijyk%65b2zh-(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "science-ai-backend-092b.onrender.com",
+    "localhost",
+    "127.0.0.1",
+]
 
 
 # Application definition
