@@ -34,10 +34,10 @@ def ask_science_ai(request):
             status=400
         )
 
-   except Exception as e:
-    print(f"AI ERROR: {e}")
+    except Exception as e:
+        print(f"AI ERROR: {e}")
 
-    return JsonResponse(
-        {"error": str(e)},
-        status=500
-    )
+        return JsonResponse(
+            {"error": str(e)},
+            status=500
+        )
