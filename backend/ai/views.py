@@ -1,10 +1,10 @@
 import json
 
-from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.http import require_POST
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
-from .services import ask_gemini_stream
+from .services import ask_gemini
 
 
 @csrf_exempt
@@ -13,47 +13,31 @@ def ask_science_ai(request):
     try:
         data = json.loads(request.body)
 
-        question = data.get("question")
+        question = data.get("question", "").strip()
 
         if not question:
             return JsonResponse(
-                {"error": "Question is required"},
+                {"error": "Question is required."},
                 status=400
             )
 
-        def generate():
-            try:
-                for chunk in ask_gemini_stream(question):
-                    print("GEMINI CHUNK:", repr(chunk))
-                    yield chunk
+        answer = ask_gemini(question)
 
-            except Exception as e:
-                print("GEMINI STREAM ERROR:", repr(e))
-
-                yield (
-                    f"\n\n[ERROR] {str(e)}"
-                )
-
-        response = StreamingHttpResponse(
-            generate(),
-            content_type="text/plain; charset=utf-8",
-        )
-
-        response["Cache-Control"] = "no-cache"
-        response["X-Accel-Buffering"] = "no"
-
-        return response
+        return JsonResponse({
+            "question": question,
+            "answer": answer,
+        })
 
     except json.JSONDecodeError:
         return JsonResponse(
-            {"error": "Invalid JSON"},
+            {"error": "Invalid JSON request."},
             status=400
         )
 
     except Exception as e:
-        print("REQUEST ERROR:", repr(e))
+        print(f"AI ERROR: {e}")
 
         return JsonResponse(
-            {"error": str(e)},
+            {"error": "AI service temporarily unavailable."},
             status=500
         )
