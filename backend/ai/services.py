@@ -7,23 +7,19 @@ client = genai.Client(
 )
 
 
-def ask_gemini_stream(question):
+def ask_gemini(question):
     max_attempts = 3
 
     for attempt in range(max_attempts):
         try:
-            stream = client.models.generate_content_stream(
+            response = client.models.generate_content(
                 model="gemini-3.8-flash",
                 contents=question,
             )
 
-            for chunk in stream:
-                if chunk.text:
-                    yield chunk.text
+            return response.text
 
-            return
-
-        except Exception as e:
+        except Exception:
             if attempt == max_attempts - 1:
                 raise
 
